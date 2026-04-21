@@ -1,12 +1,11 @@
 {
-  "name": "openclaw-render",
-  "version": "2.0.0",
+  "name": "vn-gbrain-deploy",
+  "version": "0.1.0",
   "private": true,
-  "description": "OpenClaw on Render — one-click deploy, powered by @chrysb/alphaclaw",
+  "description": "Deployable AlphaClaw image with git-crypt support for encrypted brain repo",
   "scripts": {
     "dev": "docker compose up --build",
     "dev:stop": "docker compose down",
-    "dev:clean": "docker compose down -v",
     "dev:logs": "docker compose logs -f",
     "dev:shell": "docker compose exec openclaw bash"
   },

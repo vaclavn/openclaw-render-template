@@ -2,5 +2,7 @@ node_modules/
 data/
 .DS_Store
 .env
+.env.local
 .cursor/
 docker-compose.override.yml
+*.log

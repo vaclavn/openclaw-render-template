@@ -1,209 +1,93 @@
-**⚠️ This project is still under development, use at your own risk ⚠️**
+# vn-gbrain-deploy
 
-# AlphaClaw Render Template
+Deployable container image for a 24/7 personal AI agent: **AlphaClaw** (runtime
++ UI) with **git-crypt** available for encrypted brain repos. Platform-agnostic
+Dockerfile; deploy to Northflank, Fly, Render, or any container host.
 
-Deploy OpenClaw to Render in one click. Get a 24/7 AI agent connected to Telegram or Discord, with your entire config and workspace backed up to GitHub. No CLI required.
+## What the image adds on top of AlphaClaw
 
-[![Deploy to Render](https://render.com/images/deploy-to-render-button.svg)](https://render.com/deploy?repo=https://github.com/chrysb/openclaw-render-template)
+1. Installs `git-crypt` and `tini` alongside git/curl/python/build tools
+2. On container start, `entrypoint.sh`:
+   - Decodes `GIT_CRYPT_KEY_BASE64` env var → `/data/.secrets/git-crypt-key` (mode 600)
+   - Configures git identity (`GIT_AUTHOR_NAME` / `GIT_AUTHOR_EMAIL`)
+   - Configures GitHub credentials from `GITHUB_TOKEN` for push access
+3. Hands off to `alphaclaw start`
 
-## The AlphaClaw Advantage
+After boot, the agent (or gbrain install routine) clones the encrypted brain
+repo and runs `git-crypt unlock /data/.secrets/git-crypt-key`. From that point
+on, all commits/pushes auto-encrypt via the filter.
 
-- **OpenClaw Gateway** running 24/7
-- **Everything version controlled** — config, cron jobs, workspace, and memory backed up to GitHub automatically
-- **Telegram or Discord** configured out of the box (add/remove channels anytime via the UI)
-- **Google Workspace integration** — connect Gmail, Calendar, Drive, Contacts, and Sheets with a few clicks via built-in OAuth flow
-- **Secrets never committed** — raw API keys are replaced with `${ENV_VAR}` references before pushing to GitHub
-- **Prompt hardening** — improve change visibility and reduce silent/partial edits so your OpenClaw project stays stable over time
-- **Setup UI** — web-based onboarding, env var management, channel pairing, and gateway control
-- **Webhook proxy** — single exposed port handles both the setup UI and gateway webhooks
+## Required env vars
 
-## Convenient Setup UI
+| Variable | Purpose |
+|----------|---------|
+| `SETUP_PASSWORD` | Password for the AlphaClaw welcome wizard |
+| `ANTHROPIC_API_KEY` | Claude API key for the agent |
+| `DATABASE_URL` | Supabase Postgres connection string (pgvector required) |
+| `GIT_CRYPT_KEY_BASE64` | `base64` of `git-crypt export-key` output |
+| `GITHUB_TOKEN` | PAT with `repo` scope — enables agent pushes |
+| `GIT_AUTHOR_EMAIL` | Email used on agent commits |
 
-<img width="5594" height="3646" alt="image" src="https://github.com/user-attachments/assets/6aa18214-5870-4e01-9ff4-b23e0353179e" />
+Optional:
 
-## Pricing note
+| Variable | Purpose |
+|----------|---------|
+| `OPENCLAW_GATEWAY_TOKEN` | Gateway auth (auto-generated if empty) |
+| `GIT_AUTHOR_NAME` | Commit author (default via welcome wizard) |
+| `TELEGRAM_BOT_TOKEN` | Telegram channel |
+| `OPENAI_API_KEY` | Alternative LLM provider |
+| `PORT` | HTTP port (default `3000`) |
 
-Render uses **fixed-price instance tiers**, so you pay for reserved capacity regardless of utilization. An instance with enough RAM for OpenClaw (8 GB) runs ~$85/mo on Render's Standard plan. For comparison, the same workload on Railway's usage-based pricing typically costs **$5–10/mo** because an AI agent mostly idles between messages.
+## Deploy to Northflank
 
-If cost matters more than platform preference, consider the [Railway template](https://github.com/chrysb/openclaw-railway-template) instead — same one-click deploy, significantly cheaper for bursty workloads.
+1. **Create project** in Northflank — region `eu-west-1` (closest EU to Supabase Frankfurt).
+2. **Create Deployment service:**
+   - Source: GitHub → `vaclavn/openclaw-render-template` (this repo)
+   - Build: **Dockerfile** (auto-detected)
+   - Branch: `main`
+3. **Resource plan:** `nf-compute-200` (4 vCPU, 8 GB RAM) — ~$52/month
+4. **Ports:** `3000` HTTP, public, auto-TLS
+5. **Persistent volume:** mount at `/data`, size 20 GB
+6. **Secret group:** create `vn-gbrain-secrets` with all env vars above.
+   Attach to the service.
+7. **Health check:** HTTP path `/health` on port `3000`
+8. **Deploy.**
 
-## Deploy
+After first deploy:
 
-Only one variable is needed at deploy time:
+- Open the public URL
+- Enter `SETUP_PASSWORD`
+- Complete the AlphaClaw welcome wizard (model, provider auth, GitHub, channels)
+- In the chat, paste: `Set up gbrain` → agent installs gbrain, 25 skills, cron jobs
+- When gbrain asks for the brain repo: give `https://github.com/vaclavn/notes-brain.git`
+- When prompted to unlock: the key is already at `/data/.secrets/git-crypt-key`
 
-| Variable                 | Required    | Description                               |
-| ------------------------ | ----------- | ----------------------------------------- |
-| `SETUP_PASSWORD`         | ✅ Required | Password for the setup UI                 |
-| `OPENCLAW_GATEWAY_TOKEN` | 🔒 Auto     | Auto-generated by Render                  |
-| `PORT`                   | 🔒 Auto     | Set by Render                             |
-| `WEBHOOK_TOKEN`          | 🔒 Auto     | Auto-generated by Render                  |
+## Local dev
 
-Click the button to deploy:
-
-[![Deploy to Render](https://render.com/images/deploy-to-render-button.svg)](https://render.com/deploy?repo=https://github.com/chrysb/openclaw-render-template)
-
-Everything else — AI keys, GitHub credentials, channel tokens — is configured through the setup UI after your first login.
-
-## First-time setup
-
-After deploying, visit your Render app URL (e.g. `https://your-app.onrender.com`).
-
-### 1. Log in with your setup password
-
-### 2. Complete the welcome screen
-
-The welcome screen walks you through selecting your default model and entering the minimum required variables:
-
-- **Model** (required): Pulled dynamically from your installed OpenClaw model catalog
-- **AI Provider auth** (required for selected model): Anthropic API Key/Setup Token, OpenAI API Key, Gemini API Key, or OpenAI Codex OAuth
-- **GitHub**: Personal access token + a repo (`owner/repo`) for backing up your agent's state
-- **Channel** (at least one): Telegram Bot Token or Discord Bot Token
-
-Each field includes instructions and links for how to get the value. Optional fields (like Brave Search API Key) can be filled in later from the Envars tab.
-
-> **Model catalog note:** Models are discovered at runtime via `openclaw models list --all --json`. This keeps the setup UI aligned with the OpenClaw version installed in your deployment.
->
-> **Versioning note:** Template builds intentionally install `openclaw@latest` during Docker build, so new Render deploys pick up the newest OpenClaw release automatically.
->
-> **Codex OAuth note:** OpenClaw onboarding runs in non-interactive mode here. For OAuth-only Codex setups, the wrapper uses `--auth-choice skip` and then applies your selected `openai-codex/*` model after onboarding.
-
-Click **Complete Setup** — the server runs onboarding, configures channels, and pushes an initial commit to your GitHub repo. This takes 10–15 seconds.
-
-### 3. Approve channel pairing
-
-DM your bot on Telegram (or Discord). The setup UI shows "Send a message to your bot on Telegram or Discord" with pending pairings polling every second. Click **Approve** to connect.
-
-### 4. Connect Google Workspace (optional)
-
-Once at least one channel is paired, the Google Workspace section appears:
-
-1. Click **Set up Google** and enter your OAuth client credentials (from [Google Cloud Console](https://console.cloud.google.com/apis/credentials))
-2. Select which permissions to grant
-3. Click **Sign in with Google** to complete the OAuth flow
-4. The UI shows API status for each service — click **Enable API** links for any that need enabling
-
-### 5. Start chatting
-
-DM your bot again — you're live!
-
-Check your GitHub repo — you should see the initial commit with your agent's full config and workspace.
-
-> **Memory search:** For your agent to semantically search its own memory, you need either `OPENAI_API_KEY` or `GEMINI_API_KEY` set. OpenClaw uses these to generate embeddings. Without one, memory recall won't work.
-
-## Managing environment variables
-
-The **Envars** tab lets you:
-
-- View and edit all configured environment variables
-- See which vars are set (values masked by default, click Show to reveal)
-- Add custom variables — supports pasting multiple `KEY=VALUE` lines at once
-- Delete custom variables with the ✕ button
-- Save changes to the persistent `/data/.env` file
-- Apply saved changes to bot runtime by clicking **Restart Gateway** after saving changes
-
-The **Models** tab lets you:
-
-- Set your primary model after onboarding
-- Manage AI provider keys and Codex OAuth connection
-
-Adding or removing a channel token (e.g. `DISCORD_BOT_TOKEN`) automatically enables/disables that channel in the OpenClaw config using `openclaw channels add/remove`.
-
-The server watches `/data/.env` for changes — including ones written by the OpenClaw agent itself. When the agent needs an API key for a tool, it adds a placeholder to `/data/.env` and tells you to visit the Envars tab to fill it in.
-
-### All configurable variables
-
-| Variable                   | Group       | Description                                                                                                                    |
-| -------------------------- | ----------- | ------------------------------------------------------------------------------------------------------------------------------ |
-| `ANTHROPIC_API_KEY`        | AI Provider | From [console.anthropic.com](https://console.anthropic.com/) (recommended)                                                     |
-| `ANTHROPIC_TOKEN`          | AI Provider | From `claude setup-token`                                                                                                      |
-| `OPENAI_API_KEY`           | AI Provider | From [platform.openai.com](https://platform.openai.com/)                                                                       |
-| `(no env var) Codex OAuth` | AI Provider | Connected via setup UI OAuth flow (ChatGPT subscription/Codex); stored in OpenClaw auth profiles                               |
-| `GEMINI_API_KEY`           | AI Provider | From [aistudio.google.com](https://aistudio.google.com/)                                                                       |
-| `GITHUB_TOKEN`             | GitHub      | Personal access token with `repo` scope from [github.com/settings/tokens](https://github.com/settings/tokens)                  |
-| `GITHUB_WORKSPACE_REPO`    | GitHub      | `owner/repo` (or `https://github.com/owner/repo`)                                                                              |
-| `TELEGRAM_BOT_TOKEN`       | Channels    | From [@BotFather](https://t.me/BotFather) · [full guide](https://docs.openclaw.ai/channels/telegram)                           |
-| `DISCORD_BOT_TOKEN`        | Channels    | From [Developer Portal](https://discord.com/developers/applications) · [full guide](https://docs.openclaw.ai/channels/discord) |
-| `BRAVE_API_KEY`            | Tools       | From [brave.com/search/api](https://brave.com/search/api/) — free tier available                                               |
-
-## Architecture
-
-```
-Internet → Render :3000 (Express)
-├── /                          → Setup UI (auth required)
-├── /setup                     → Setup UI (auth required)
-├── /api/status, /api/env ...  → Express handles (setup endpoints)
-├── /api/* (everything else)   → proxy → gateway :18789
-├── /webhook/*                 → proxy → gateway :18789 (token → Bearer header)
-├── /openclaw                  → proxy → gateway :18789 (gateway control UI)
-├── /assets/*                  → proxy → gateway :18789 (gateway UI assets)
-└── WebSocket upgrade          → proxy → gateway :18789
+```bash
+cp .env.example .env
+# fill in API keys, DATABASE_URL, GIT_CRYPT_KEY_BASE64
+docker compose up --build
 ```
 
-### File layout
+UI at http://127.0.0.1:3000/
 
-```
-/data/.openclaw/           ← Render persistent disk + git repo
-├── openclaw.json          ← Config (secrets → ${ENV_VAR} references)
-├── skills/                ← Agent skills (control-ui installed on onboard)
-├── cron/jobs.json         ← Scheduled tasks
-├── .gitignore             ← Excludes keys, logs, caches
-├── agents/                ← Session state
-└── workspace/             ← Agent workspace
-    ├── hooks/bootstrap/   ← Deploy-synced prompt templates
-    │   ├── AGENTS.md      ← Injected by bootstrap-extra-files
-    │   └── TOOLS.md       ← Injected by bootstrap-extra-files
-    ├── HEARTBEAT.md       ← Periodic check instructions
-    └── memory/            ← Agent memory
+## Git-crypt key management
 
-/data/.env                 ← Persistent env vars (managed via Setup UI)
+The value in `GIT_CRYPT_KEY_BASE64` is the symmetric git-crypt key exported
+from the brain repo and base64-encoded:
+
+```bash
+cd /path/to/notes-brain
+git-crypt export-key /tmp/key
+base64 < /tmp/key   # paste output into Northflank secret
+shred -u /tmp/key   # delete local copy
 ```
 
-### First boot
+**Always keep a copy in 1Password.** If the key is lost, content on GitHub
+is unrecoverable.
 
-1. Container starts, installs dependencies
-2. Server starts and serves the setup UI at `/`
-3. User completes the welcome screen with required variables
-4. Server runs `openclaw onboard`, configures channels, sanitizes secrets, and enables `bootstrap-extra-files` with `hooks/bootstrap/*`
-5. Everything committed and pushed to your GitHub repo
-6. Gateway starts
+## Origin
 
-### Subsequent boots
-
-1. `/data/.env` is loaded, bootstrap prompt templates are synced into `workspace/hooks/bootstrap`, and channel config is synced to match available tokens
-2. Gateway starts
-3. Setup UI available at `/` for managing env vars, channels, and pairings
-
-### Gateway management
-
-- **Status**: The setup UI checks if the gateway is listening on its port in real-time
-- **Restart**: Click "Restart" in the General tab — runs `openclaw gateway install --force` then `openclaw gateway restart`
-- **Channel sync**: Adding/removing channel tokens in the Envars tab automatically runs `openclaw channels add/remove`
-
-## Troubleshooting
-
-### Pairing
-
-First time you DM the bot, it sends a pairing request. Approve it in the setup UI. Pairings poll every second when pending — if nothing appears, check that the channel token is correct in the Envars tab.
-
-### Bot doesn't respond
-
-- Check deploy logs for errors
-- Verify your channel token is correct (Envars tab)
-- Try clicking Restart in the General tab
-- Check gateway status — should show green "running"
-
-### Gateway won't start
-
-- Ensure the Render persistent disk is mounted at `/data`
-- Check that AI provider credentials are valid
-- Check deploy logs for the specific error — common cause is a missing env var referenced in `openclaw.json`
-
-### Channel shows "Add token"
-
-The channel's env var is empty or missing. Go to the Envars tab, add the token, and save. The channel will be automatically enabled in the config.
-
-## Links
-
-- [OpenClaw docs](https://docs.openclaw.ai)
-- [OpenClaw GitHub](https://github.com/openclaw/openclaw)
-- [Community Discord](https://discord.com/invite/clawd)
+Fork of [chrysb/openclaw-render-template](https://github.com/chrysb/openclaw-render-template)
+— added git-crypt support, simplified for Northflank.
