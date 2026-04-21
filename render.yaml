@@ -1,8 +1,9 @@
 services:
   - type: web
     runtime: docker
-    name: AlphaClaw
-    plan: starter
+    name: VN-GBrain
+    region: frankfurt
+    plan: pro plus
     healthCheckPath: /health
     envVars:
       - key: SETUP_PASSWORD
@@ -13,7 +14,25 @@ services:
         generateValue: true
       - key: PORT
         value: 3000
+      - key: ANTHROPIC_API_KEY
+        sync: false
+      - key: OPENAI_API_KEY
+        sync: false
+      - key: DATABASE_URL
+        sync: false
+      - key: BRAIN_REPO_URL
+        sync: false
+      - key: GIT_CRYPT_KEY_BASE64
+        sync: false
+      - key: GITHUB_TOKEN
+        sync: false
+      - key: GIT_AUTHOR_NAME
+        value: VN GBrain Agent
+      - key: GIT_AUTHOR_EMAIL
+        sync: false
+      - key: TELEGRAM_BOT_TOKEN
+        sync: false
     disk:
       name: openclaw-data
       mountPath: /data
-      sizeGB: 10
+      sizeGB: 20
